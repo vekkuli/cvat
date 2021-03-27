@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image
 
 from cvat.apps.engine.cache import CacheInteraction
-from cvat.apps.engine.media_extractors import VideoReader, ZipReader
+from cvat.apps.engine.media_extractors import ZipReader
 from cvat.apps.engine.mime_types import mimetypes
 from cvat.apps.engine.models import DataChoice, StorageMethodChoice, DimensionType
 
@@ -88,8 +88,7 @@ class FrameProvider:
         self._loaders = {}
 
         reader_class = {
-            DataChoice.IMAGESET: ZipReader,
-            DataChoice.VIDEO: VideoReader,
+            DataChoice.IMAGESET: ZipReader
         }
 
         if db_data.storage_method == StorageMethodChoice.CACHE:
@@ -133,27 +132,15 @@ class FrameProvider:
 
         return chunk_number_
 
-    @classmethod
-    def _av_frame_to_png_bytes(cls, av_frame):
-        ext = cls.VIDEO_FRAME_EXT
-        image = av_frame.to_ndarray(format='bgr24')
-        success, result = cv2.imencode(ext, image)
-        if not success:
-            raise Exception("Failed to encode image to '%s' format" % (ext))
-        return BytesIO(result.tobytes())
-
     def _convert_frame(self, frame, reader_class, out_type):
         if out_type == self.Type.BUFFER:
-            return self._av_frame_to_png_bytes(frame) if reader_class is VideoReader else frame
+            return frame
         elif out_type == self.Type.PIL:
-            return frame.to_image() if reader_class is VideoReader else Image.open(frame)
+            return Image.open(frame)
         elif out_type == self.Type.NUMPY_ARRAY:
-            if reader_class is VideoReader:
-                image = frame.to_ndarray(format='bgr24')
-            else:
-                image = np.array(Image.open(frame))
-                if len(image.shape) == 3 and image.shape[2] in {3, 4}:
-                    image[:, :, :3] = image[:, :, 2::-1] # RGB to BGR
+            image = np.array(Image.open(frame))
+            if len(image.shape) == 3 and image.shape[2] in {3, 4}:
+                image[:, :, :3] = image[:, :, 2::-1] # RGB to BGR
             return image
         else:
             raise Exception('unsupported output type')
@@ -175,8 +162,6 @@ class FrameProvider:
         frame, frame_name, _ = chunk_reader[frame_offset]
 
         frame = self._convert_frame(frame, loader.reader_class, out_type)
-        if loader.reader_class is VideoReader:
-            return (frame, self.VIDEO_FRAME_MIME)
         return (frame, mimetypes.guess_type(frame_name))
 
     def get_frames(self, quality=Quality.ORIGINAL, out_type=Type.BUFFER):

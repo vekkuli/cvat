@@ -1,5 +1,5 @@
 {
-    "python.pythonPath": ".env/bin/python",
+    "python.pythonPath": "C:\\Python\\Python38\\python.exe",
     "eslint.probe": [
         "javascript",
         "typescript",

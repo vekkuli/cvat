@@ -17,7 +17,6 @@ from glob import glob
 from io import BytesIO
 from unittest import mock
 
-import av
 import numpy as np
 from pdf2image import convert_from_bytes
 from django.conf import settings
@@ -32,7 +31,7 @@ from cvat.apps.engine.models import (AttributeSpec, AttributeType, Data, Job, Pr
     Segment, StatusChoice, Task, Label, StorageMethodChoice, StorageChoice)
 from cvat.apps.engine.media_extractors import ValidateDimension
 from cvat.apps.engine.models import DimensionType
-from utils.dataset_manifest import ImageManifestManager, VideoManifestManager
+from utils.dataset_manifest import ImageManifestManager
 
 def create_db_users(cls):
     (group_admin, _) = Group.objects.get_or_create(name="admin")
@@ -1984,10 +1983,7 @@ def generate_manifest_file(data_type, manifest_path, sources):
         }
     }
 
-    if data_type == 'video':
-        manifest = VideoManifestManager(manifest_path)
-    else:
-        manifest = ImageManifestManager(manifest_path)
+    manifest = ImageManifestManager(manifest_path)
     prepared_meta = manifest.prepare_meta(**kwargs[data_type])
     manifest.create(prepared_meta)
 
@@ -2040,30 +2036,30 @@ class TaskDataAPITestCase(APITestCase):
             image.write(data.read())
         cls._image_sizes[filename] = img_size
 
-        filename = "test_video_1.mp4"
-        path = os.path.join(settings.SHARE_ROOT, filename)
-        img_sizes, data = generate_video_file(filename, width=1280, height=720)
-        with open(path, "wb") as video:
-            video.write(data.read())
-        cls._image_sizes[filename] = img_sizes
+        # filename = "test_video_1.mp4"
+        # path = os.path.join(settings.SHARE_ROOT, filename)
+        # img_sizes, data = generate_video_file(filename, width=1280, height=720)
+        # with open(path, "wb") as video:
+        #     video.write(data.read())
+        # cls._image_sizes[filename] = img_sizes
 
-        filename = "test_rotated_90_video.mp4"
-        path = os.path.join(os.path.dirname(__file__), 'assets', 'test_rotated_90_video.mp4')
-        container = av.open(path, 'r')
-        for frame in container.decode(video=0):
-            # pyav ignores rotation record in metadata when decoding frames
-            img_sizes = [(frame.height, frame.width)] * container.streams.video[0].frames
-            break
-        container.close()
-        cls._image_sizes[filename] = img_sizes
+        # filename = "test_rotated_90_video.mp4"
+        # path = os.path.join(os.path.dirname(__file__), 'assets', 'test_rotated_90_video.mp4')
+        # container = av.open(path, 'r')
+        # for frame in container.decode(video=0):
+        #     # pyav ignores rotation record in metadata when decoding frames
+        #     img_sizes = [(frame.height, frame.width)] * container.streams.video[0].frames
+        #     break
+        # container.close()
+        # cls._image_sizes[filename] = img_sizes
 
-        filename = os.path.join("videos", "test_video_1.mp4")
-        path = os.path.join(settings.SHARE_ROOT, filename)
-        os.makedirs(os.path.dirname(path))
-        img_sizes, data = generate_video_file(filename, width=1280, height=720)
-        with open(path, "wb") as video:
-            video.write(data.read())
-        cls._image_sizes[filename] = img_sizes
+        # filename = os.path.join("videos", "test_video_1.mp4")
+        # path = os.path.join(settings.SHARE_ROOT, filename)
+        # os.makedirs(os.path.dirname(path))
+        # img_sizes, data = generate_video_file(filename, width=1280, height=720)
+        # with open(path, "wb") as video:
+        #     video.write(data.read())
+        # cls._image_sizes[filename] = img_sizes
 
         filename = os.path.join("test_archive_1.zip")
         path = os.path.join(settings.SHARE_ROOT, filename)

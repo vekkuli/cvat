@@ -15,8 +15,8 @@ from django.db import migrations, models
 import django.db.models.deletion
 from django.conf import settings
 
-from cvat.apps.engine.media_extractors import (VideoReader, ArchiveReader, ZipReader,
-    PdfReader , ImageListReader, Mpeg4ChunkWriter,
+from cvat.apps.engine.media_extractors import (ArchiveReader, ZipReader,
+    PdfReader , ImageListReader,
     ZipChunkWriter, ZipCompressedChunkWriter, get_mime)
 from cvat.apps.engine.models import DataChoice
 
@@ -63,38 +63,7 @@ def migrate_task_data(db_task_id, db_data_id, original_video, original_images, s
         old_task_data_dir = os.path.join(old_db_task_dir, 'data')
         if os.path.exists(old_task_data_dir) and size != 0:
             if original_video:
-                if os.path.exists(original_video):
-                    _stop_frame = stop_frame if stop_frame else None
-                    reader = VideoReader([original_video], get_frame_step(frame_filter), start_frame, _stop_frame)
-                    original_chunk_writer = Mpeg4ChunkWriter(100)
-                    compressed_chunk_writer = ZipCompressedChunkWriter(image_quality)
-
-                    counter = itertools.count()
-                    generator = itertools.groupby(reader, lambda x: next(counter) // chunk_size)
-                    for chunk_idx, chunk_images in generator:
-                        chunk_images = list(chunk_images)
-                        original_chunk_path = os.path.join(original_cache_dir, '{}.mp4'.format(chunk_idx))
-                        original_chunk_writer.save_as_chunk(chunk_images, original_chunk_path)
-
-                        compressed_chunk_path = os.path.join(compressed_cache_dir, '{}.zip'.format(chunk_idx))
-                        compressed_chunk_writer.save_as_chunk(chunk_images, compressed_chunk_path)
-
-                    preview = reader.get_preview()
-                    preview.save(os.path.join(db_data_dir, 'preview.jpeg'))
-                else:
-                    original_chunk_writer = ZipChunkWriter(100)
-                    for chunk_idx, chunk_image_ids in enumerate(slice_by_size(range(size), chunk_size)):
-                        chunk_images = []
-                        for image_id in chunk_image_ids:
-                            image_path = get_frame_path(old_task_data_dir, image_id)
-                            chunk_images.append((image_path, image_path))
-
-                        original_chunk_path = os.path.join(original_cache_dir, '{}.zip'.format(chunk_idx))
-                        original_chunk_writer.save_as_chunk(chunk_images, original_chunk_path)
-
-                        compressed_chunk_path = os.path.join(compressed_cache_dir, '{}.zip'.format(chunk_idx))
-                        os.symlink(original_chunk_path, compressed_chunk_path)
-                        shutil.copyfile(get_frame_path(old_task_data_dir, image_id), os.path.join(db_data_dir, 'preview.jpeg'))
+                pass
             else:
                 reader = None
                 if os.path.exists(original_images[0]): # task created from images

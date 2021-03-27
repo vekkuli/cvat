@@ -13,12 +13,11 @@ from urllib import parse as urlparse
 from urllib import request as urlrequest
 import requests
 
-from cvat.apps.engine.media_extractors import get_mime, MEDIA_TYPES, Mpeg4ChunkWriter, ZipChunkWriter, Mpeg4CompressedChunkWriter, ZipCompressedChunkWriter, ValidateDimension
+from cvat.apps.engine.media_extractors import get_mime, MEDIA_TYPES, ZipChunkWriter, ZipCompressedChunkWriter, ValidateDimension
 from cvat.apps.engine.models import DataChoice, StorageMethodChoice, StorageChoice, RelatedFile
 from cvat.apps.engine.utils import av_scan_paths
 from cvat.apps.engine.models import DimensionType
-from utils.dataset_manifest import ImageManifestManager, VideoManifestManager
-from utils.dataset_manifest.core import VideoManifestValidator
+from utils.dataset_manifest import ImageManifestManager
 
 import django_rq
 from django.conf import settings
@@ -278,8 +277,8 @@ def _create_thread(tid, data):
             extractor.add_files(validate_dimension.converted_files)
 
     db_task.mode = task_mode
-    db_data.compressed_chunk_type = models.DataChoice.VIDEO if task_mode == 'interpolation' and not data['use_zip_chunks'] else models.DataChoice.IMAGESET
-    db_data.original_chunk_type = models.DataChoice.VIDEO if task_mode == 'interpolation' else models.DataChoice.IMAGESET
+    db_data.compressed_chunk_type = models.DataChoice.IMAGESET
+    db_data.original_chunk_type = models.DataChoice.IMAGESET
 
     def update_progress(progress):
         progress_animation = '|/-\\'
@@ -295,15 +294,9 @@ def _create_thread(tid, data):
         job.save_meta()
         update_progress.call_counter = (update_progress.call_counter + 1) % len(progress_animation)
 
-    compressed_chunk_writer_class = Mpeg4CompressedChunkWriter if db_data.compressed_chunk_type == DataChoice.VIDEO else ZipCompressedChunkWriter
-    if db_data.original_chunk_type == DataChoice.VIDEO:
-        original_chunk_writer_class = Mpeg4ChunkWriter
-        # Let's use QP=17 (that is 67 for 0-100 range) for the original chunks, which should be visually lossless or nearly so.
-        # A lower value will significantly increase the chunk size with a slight increase of quality.
-        original_quality = 67
-    else:
-        original_chunk_writer_class = ZipChunkWriter
-        original_quality = 100
+    compressed_chunk_writer_class = ZipCompressedChunkWriter
+    original_chunk_writer_class = ZipChunkWriter
+    original_quality = 100
 
     kwargs = {}
     if validate_dimension.dimension == DimensionType.DIM_3D:
@@ -341,98 +334,44 @@ def _create_thread(tid, data):
                 if upload_dir != settings.SHARE_ROOT:
                     os.remove(os.path.join(upload_dir, manifest_file[0]))
 
-            if task_mode == MEDIA_TYPES['video']['mode']:
-                try:
-                    manifest_is_prepared = False
-                    if manifest_file:
-                        try:
-                            manifest = VideoManifestValidator(source_path=os.path.join(upload_dir, media_files[0]),
-                                                              manifest_path=db_data.get_manifest_path())
-                            manifest.init_index()
-                            manifest.validate_seek_key_frames()
-                            manifest.validate_frame_numbers()
-                            assert len(manifest) > 0, 'No key frames.'
+            db_data.size = len(extractor)
+            manifest = ImageManifestManager(db_data.get_manifest_path())
+            if not manifest_file:
+                if db_task.dimension == DimensionType.DIM_2D:
+                    meta_info = manifest.prepare_meta(
+                        sources=extractor.absolute_source_paths,
+                        data_dir=upload_dir
+                    )
+                    content = meta_info.content
+                else:
+                    content = []
+                    for source in extractor.absolute_source_paths:
+                        name, ext = os.path.splitext(os.path.relpath(source, upload_dir))
+                        content.append({
+                            'name': name,
+                            'extension': ext
+                        })
+                manifest.create(content)
+            manifest.init_index()
+            counter = itertools.count()
+            for _, chunk_frames in itertools.groupby(extractor.frame_range, lambda x: next(counter) // db_data.chunk_size):
+                chunk_paths = [(extractor.get_path(i), i) for i in chunk_frames]
+                img_sizes = []
 
-                            all_frames = manifest['properties']['length']
-                            video_size = manifest['properties']['resolution']
-                            manifest_is_prepared = True
-                        except Exception as ex:
-                            if os.path.exists(db_data.get_index_path()):
-                                os.remove(db_data.get_index_path())
-                            if isinstance(ex, AssertionError):
-                                base_msg = str(ex)
-                            else:
-                                base_msg = 'Invalid manifest file was upload.'
-                                slogger.glob.warning(str(ex))
-                            _update_status('{} Start prepare a valid manifest file.'.format(base_msg))
-
-                    if not manifest_is_prepared:
-                        _update_status('Start prepare a manifest file')
-                        manifest = VideoManifestManager(db_data.get_manifest_path())
-                        meta_info = manifest.prepare_meta(
-                            media_file=media_files[0],
-                            upload_dir=upload_dir,
-                            chunk_size=db_data.chunk_size
-                        )
-                        manifest.create(meta_info)
-                        manifest.init_index()
-                        _update_status('A manifest had been created')
-
-                        all_frames = meta_info.get_size()
-                        video_size = meta_info.frame_sizes
-                        manifest_is_prepared = True
-
-                    db_data.size = len(range(db_data.start_frame, min(data['stop_frame'] + 1 \
-                        if data['stop_frame'] else all_frames, all_frames), db_data.get_frame_step()))
-                    video_path = os.path.join(upload_dir, media_files[0])
-                except Exception as ex:
-                    db_data.storage_method = StorageMethodChoice.FILE_SYSTEM
-                    if os.path.exists(db_data.get_manifest_path()):
-                        os.remove(db_data.get_manifest_path())
-                    if os.path.exists(db_data.get_index_path()):
-                        os.remove(db_data.get_index_path())
-                    base_msg = str(ex) if isinstance(ex, AssertionError) \
-                        else "Uploaded video does not support a quick way of task creating."
-                    _update_status("{} The task will be created using the old method".format(base_msg))
-            else:# images, archive, pdf
-                db_data.size = len(extractor)
-                manifest = ImageManifestManager(db_data.get_manifest_path())
-                if not manifest_file:
+                for _, frame_id in chunk_paths:
+                    properties = manifest[frame_id]
                     if db_task.dimension == DimensionType.DIM_2D:
-                        meta_info = manifest.prepare_meta(
-                            sources=extractor.absolute_source_paths,
-                            data_dir=upload_dir
-                        )
-                        content = meta_info.content
+                        resolution = (properties['width'], properties['height'])
                     else:
-                        content = []
-                        for source in extractor.absolute_source_paths:
-                            name, ext = os.path.splitext(os.path.relpath(source, upload_dir))
-                            content.append({
-                                'name': name,
-                                'extension': ext
-                            })
-                    manifest.create(content)
-                manifest.init_index()
-                counter = itertools.count()
-                for _, chunk_frames in itertools.groupby(extractor.frame_range, lambda x: next(counter) // db_data.chunk_size):
-                    chunk_paths = [(extractor.get_path(i), i) for i in chunk_frames]
-                    img_sizes = []
+                        resolution = extractor.get_image_size(frame_id)
+                    img_sizes.append(resolution)
 
-                    for _, frame_id in chunk_paths:
-                        properties = manifest[frame_id]
-                        if db_task.dimension == DimensionType.DIM_2D:
-                            resolution = (properties['width'], properties['height'])
-                        else:
-                            resolution = extractor.get_image_size(frame_id)
-                        img_sizes.append(resolution)
-
-                    db_images.extend([
-                        models.Image(data=db_data,
-                            path=os.path.relpath(path, upload_dir),
-                            frame=frame, width=w, height=h)
-                        for (path, frame), (w, h) in zip(chunk_paths, img_sizes)
-                    ])
+                db_images.extend([
+                    models.Image(data=db_data,
+                        path=os.path.relpath(path, upload_dir),
+                        frame=frame, width=w, height=h)
+                    for (path, frame), (w, h) in zip(chunk_paths, img_sizes)
+                ])
 
     if db_data.storage_method == StorageMethodChoice.FILE_SYSTEM or not settings.USE_CACHE:
         counter = itertools.count()

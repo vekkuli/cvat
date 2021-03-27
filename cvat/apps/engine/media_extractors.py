@@ -13,7 +13,6 @@ import re
 from abc import ABC, abstractmethod
 from contextlib import closing
 
-import av
 import numpy as np
 from pyunpack import Archive
 from PIL import Image, ImageFile
@@ -26,7 +25,7 @@ from cvat.apps.engine.models import DimensionType
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 from cvat.apps.engine.mime_types import mimetypes
-from utils.dataset_manifest import VideoManifestManager, ImageManifestManager
+from utils.dataset_manifest import ImageManifestManager
 
 def get_mime(name):
     for type_name, type_def in MEDIA_TYPES.items():
@@ -251,78 +250,6 @@ class ZipReader(ImageListReader):
         if not self.extract_dir:
             os.remove(self._zip_source.filename)
 
-class VideoReader(IMediaReader):
-    def __init__(self, source_path, step=1, start=0, stop=None):
-        super().__init__(
-            source_path=source_path,
-            step=step,
-            start=start,
-            stop=stop + 1 if stop is not None else stop,
-        )
-
-    def _has_frame(self, i):
-        if i >= self._start:
-            if (i - self._start) % self._step == 0:
-                if self._stop is None or i < self._stop:
-                    return True
-
-        return False
-
-    def _decode(self, container):
-        frame_num = 0
-        for packet in container.demux():
-            if packet.stream.type == 'video':
-                for image in packet.decode():
-                    frame_num += 1
-                    if self._has_frame(frame_num - 1):
-                        if packet.stream.metadata.get('rotate'):
-                            old_image = image
-                            image = av.VideoFrame().from_ndarray(
-                                rotate_image(
-                                    image.to_ndarray(format='bgr24'),
-                                    360 - int(container.streams.video[0].metadata.get('rotate'))
-                                ),
-                                format ='bgr24'
-                            )
-                            image.pts = old_image.pts
-                        yield (image, self._source_path[0], image.pts)
-
-    def __iter__(self):
-        container = self._get_av_container()
-        source_video_stream = container.streams.video[0]
-        source_video_stream.thread_type = 'AUTO'
-
-        return self._decode(container)
-
-    def get_progress(self, pos):
-        container = self._get_av_container()
-        # Not for all containers return real value
-        stream = container.streams.video[0]
-        return pos / stream.duration if stream.duration else None
-
-    def _get_av_container(self):
-        if isinstance(self._source_path[0], io.BytesIO):
-            self._source_path[0].seek(0) # required for re-reading
-        return av.open(self._source_path[0])
-
-    def get_preview(self):
-        container = self._get_av_container()
-        stream = container.streams.video[0]
-        preview = next(container.decode(stream))
-        return self._get_preview(preview.to_image() if not stream.metadata.get('rotate') \
-            else av.VideoFrame().from_ndarray(
-                rotate_image(
-                    preview.to_ndarray(format='bgr24'),
-                    360 - int(container.streams.video[0].metadata.get('rotate'))
-                ),
-                format ='bgr24'
-            ).to_image()
-        )
-
-    def get_image_size(self, i):
-        image = (next(iter(self)))[0]
-        return image.width, image.height
-
 class FragmentMediaReader:
     def __init__(self, chunk_number, chunk_size, start, stop, step=1):
         self._start = start
@@ -364,61 +291,6 @@ class ImageDatasetManifestReader(FragmentMediaReader):
         for idx in self._frame_range:
             yield self._manifest[idx]
 
-class VideoDatasetManifestReader(FragmentMediaReader):
-    def __init__(self, manifest_path, **kwargs):
-        self.source_path = kwargs.pop('source_path')
-        super().__init__(**kwargs)
-        self._manifest = VideoManifestManager(manifest_path)
-        self._manifest.init_index()
-
-    def _get_nearest_left_key_frame(self):
-        if self._start_chunk_frame_number >= \
-                self._manifest[len(self._manifest) - 1].get('number'):
-            left_border = len(self._manifest) - 1
-        else:
-            left_border = 0
-            delta = len(self._manifest)
-            while delta:
-                step = delta // 2
-                cur_position = left_border + step
-                if self._manifest[cur_position].get('number') < self._start_chunk_frame_number:
-                    cur_position += 1
-                    left_border = cur_position
-                    delta -= step + 1
-                else:
-                    delta = step
-            if self._manifest[cur_position].get('number') > self._start_chunk_frame_number:
-                left_border -= 1
-        frame_number = self._manifest[left_border].get('number')
-        timestamp = self._manifest[left_border].get('pts')
-        return frame_number, timestamp
-
-    def __iter__(self):
-        start_decode_frame_number, start_decode_timestamp = self._get_nearest_left_key_frame()
-        with closing(av.open(self.source_path, mode='r')) as container:
-            video_stream = next(stream for stream in container.streams if stream.type == 'video')
-            video_stream.thread_type = 'AUTO'
-
-            container.seek(offset=start_decode_timestamp, stream=video_stream)
-
-            frame_number = start_decode_frame_number - 1
-            for packet in container.demux(video_stream):
-                for frame in packet.decode():
-                    frame_number += 1
-                    if frame_number in self._frame_range:
-                        if video_stream.metadata.get('rotate'):
-                            frame = av.VideoFrame().from_ndarray(
-                                rotate_image(
-                                    frame.to_ndarray(format='bgr24'),
-                                    360 - int(container.streams.video[0].metadata.get('rotate'))
-                                ),
-                                format ='bgr24'
-                            )
-                        yield frame
-                    elif frame_number < self._frame_range[-1]:
-                        continue
-                    else:
-                        return
 
 class IChunkWriter(ABC):
     def __init__(self, quality, dimension=DimensionType.DIM_2D):
@@ -427,7 +299,7 @@ class IChunkWriter(ABC):
 
     @staticmethod
     def _compress_image(image_path, quality):
-        image = image_path.to_image() if isinstance(image_path, av.VideoFrame) else Image.open(image_path)
+        image = Image.open(image_path)
         # Ensure image data fits into 8bit per pixel before RGB conversion as PIL clips values on conversion
         if image.mode == "I":
             # Image mode is 32bit integer pixels.
@@ -481,116 +353,6 @@ class ZipCompressedChunkWriter(IChunkWriter):
                 zip_chunk.writestr(arcname, image_buf.getvalue())
         return image_sizes
 
-class Mpeg4ChunkWriter(IChunkWriter):
-    def __init__(self, quality=67):
-        # translate inversed range [1:100] to [0:51]
-        quality = round(51 * (100 - quality) / 99)
-        super().__init__(quality)
-        self._output_fps = 25
-        try:
-            codec = av.codec.Codec('libopenh264', 'w')
-            self._codec_name = codec.name
-            self._codec_opts = {
-                'profile': 'constrained_baseline',
-                'qmin': str(self._image_quality),
-                'qmax': str(self._image_quality),
-                'rc_mode': 'buffer',
-            }
-        except av.codec.codec.UnknownCodecError:
-            codec = av.codec.Codec('libx264', 'w')
-            self._codec_name = codec.name
-            self._codec_opts = {
-                "crf": str(self._image_quality),
-                "preset": "ultrafast",
-            }
-
-    def _create_av_container(self, path, w, h, rate, options, f='mp4'):
-            # x264 requires width and height must be divisible by 2 for yuv420p
-            if h % 2:
-                h += 1
-            if w % 2:
-                w += 1
-
-            container = av.open(path, 'w',format=f)
-            video_stream = container.add_stream(self._codec_name, rate=rate)
-            video_stream.pix_fmt = "yuv420p"
-            video_stream.width = w
-            video_stream.height = h
-            video_stream.options = options
-
-            return container, video_stream
-
-    def save_as_chunk(self, images, chunk_path):
-        if not images:
-            raise Exception('no images to save')
-
-        input_w = images[0][0].width
-        input_h = images[0][0].height
-
-        output_container, output_v_stream = self._create_av_container(
-            path=chunk_path,
-            w=input_w,
-            h=input_h,
-            rate=self._output_fps,
-            options=self._codec_opts,
-        )
-
-        self._encode_images(images, output_container, output_v_stream)
-        output_container.close()
-        return [(input_w, input_h)]
-
-    @staticmethod
-    def _encode_images(images, container, stream):
-        for frame, _, _ in images:
-            # let libav set the correct pts and time_base
-            frame.pts = None
-            frame.time_base = None
-
-            for packet in stream.encode(frame):
-                container.mux(packet)
-
-        # Flush streams
-        for packet in stream.encode():
-            container.mux(packet)
-
-class Mpeg4CompressedChunkWriter(Mpeg4ChunkWriter):
-    def __init__(self, quality):
-        super().__init__(quality)
-        if self._codec_name == 'libx264':
-            self._codec_opts = {
-                'profile': 'baseline',
-                'coder': '0',
-                'crf': str(self._image_quality),
-                'wpredp': '0',
-                'flags': '-loop',
-            }
-
-    def save_as_chunk(self, images, chunk_path):
-        if not images:
-            raise Exception('no images to save')
-
-        input_w = images[0][0].width
-        input_h = images[0][0].height
-
-        downscale_factor = 1
-        while input_h / downscale_factor >= 1080:
-            downscale_factor *= 2
-
-        output_h = input_h // downscale_factor
-        output_w = input_w // downscale_factor
-
-        output_container, output_v_stream = self._create_av_container(
-            path=chunk_path,
-            w=output_w,
-            h=output_h,
-            rate=self._output_fps,
-            options=self._codec_opts,
-        )
-
-        self._encode_images(images, output_container, output_v_stream)
-        output_container.close()
-        return [(input_w, input_h)]
-
 def _is_archive(path):
     mime = mimetypes.guess_type(path)
     mime_type = mime[0]
@@ -639,12 +401,12 @@ MEDIA_TYPES = {
         'mode': 'annotation',
         'unique': False,
     },
-    'video': {
-        'has_mime_type': _is_video,
-        'extractor': VideoReader,
-        'mode': 'interpolation',
-        'unique': True,
-    },
+    # 'video': {
+    #     'has_mime_type': _is_video,
+    #     'extractor': VideoReader,
+    #     'mode': 'interpolation',
+    #     'unique': True,
+    # },
     'archive': {
         'has_mime_type': _is_archive,
         'extractor': ArchiveReader,

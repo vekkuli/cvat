@@ -22,24 +22,24 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Compile Openh264 and FFmpeg
-ARG PREFIX=/opt/ffmpeg
-ARG PKG_CONFIG_PATH=${PREFIX}/lib/pkgconfig
+# ARG PREFIX=/opt/ffmpeg
+# ARG PKG_CONFIG_PATH=${PREFIX}/lib/pkgconfig
 
-ENV FFMPEG_VERSION=4.3.1 \
-    OPENH264_VERSION=2.1.1
+# ENV FFMPEG_VERSION=4.3.1 \
+    # OPENH264_VERSION=2.1.1
 
-WORKDIR /tmp/openh264
-RUN curl -sL https://github.com/cisco/openh264/archive/v${OPENH264_VERSION}.tar.gz --output openh264-${OPENH264_VERSION}.tar.gz && \
-    tar -zx --strip-components=1 -f openh264-${OPENH264_VERSION}.tar.gz && \
-    make -j5 && make install PREFIX=${PREFIX} && make clean
+# WORKDIR /tmp/openh264
+# RUN curl -sL https://github.com/cisco/openh264/archive/v${OPENH264_VERSION}.tar.gz --output openh264-${OPENH264_VERSION}.tar.gz && \
+#     tar -zx --strip-components=1 -f openh264-${OPENH264_VERSION}.tar.gz && \
+#     make -j5 && make install PREFIX=${PREFIX} && make clean
 
-WORKDIR /tmp/ffmpeg
-RUN curl -sL https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.bz2 --output - | \
-    tar -jx --strip-components=1 && \
-    ./configure --disable-nonfree --disable-gpl --enable-libopenh264 --enable-shared --disable-static --prefix="${PREFIX}" && \
-    # make clean keeps the configuration files that let to know how the original sources were used to create the binary
-    make -j5 && make install && make clean && \
-    tar -zcf "/tmp/ffmpeg-$FFMPEG_VERSION.tar.gz" . && mv "/tmp/ffmpeg-$FFMPEG_VERSION.tar.gz" .
+# WORKDIR /tmp/ffmpeg
+# RUN curl -sL https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.bz2 --output - | \
+#     tar -jx --strip-components=1 && \
+#     ./configure --disable-nonfree --disable-gpl --enable-libopenh264 --enable-shared --disable-static --prefix="${PREFIX}" && \
+#     # make clean keeps the configuration files that let to know how the original sources were used to create the binary
+#     make -j5 && make install && make clean && \
+#     tar -zcf "/tmp/ffmpeg-$FFMPEG_VERSION.tar.gz" . && mv "/tmp/ffmpeg-$FFMPEG_VERSION.tar.gz" .
 
 # Install requirements
 RUN python3 -m venv /opt/venv
@@ -132,12 +132,12 @@ RUN if [ "$INSTALL_SOURCES" = "yes" ]; then \
             done &&                                           \
         rm -rf /var/lib/apt/lists/*;                          \
     fi
-COPY --from=build-image /tmp/openh264/openh264*.tar.gz /tmp/ffmpeg/ffmpeg*.tar.gz ${HOME}/sources/
+# COPY --from=build-image /tmp/openh264/openh264*.tar.gz /tmp/ffmpeg/ffmpeg*.tar.gz ${HOME}/sources/
 
 # Copy python virtual enviroment and FFmpeg binaries from build-image
 COPY --from=build-image /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
-COPY --from=build-image /opt/ffmpeg /usr
+# COPY --from=build-image /opt/ffmpeg /usr
 
 # Install and initialize CVAT, copy all necessary files
 COPY --chown=${USER} components /tmp/components

@@ -9,7 +9,7 @@ from django.db import migrations
 
 from cvat.apps.engine.models import (DimensionType, StorageChoice,
                                      StorageMethodChoice)
-from utils.dataset_manifest import ImageManifestManager, VideoManifestManager
+from utils.dataset_manifest import ImageManifestManager
 
 def migrate_data(apps, shema_editor):
     Data = apps.get_model("engine", "Data")
@@ -26,49 +26,43 @@ def migrate_data(apps, shema_editor):
             if os.path.exists(os.path.join(upload_dir, 'manifest.jsonl')):
                 continue
             data_dir = upload_dir if db_data.storage == StorageChoice.LOCAL else settings.SHARE_ROOT
-            if hasattr(db_data, 'video'):
-                media_file = os.path.join(data_dir, db_data.video.path)
-                manifest = VideoManifestManager(manifest_path=upload_dir)
-                meta_info = manifest.prepare_meta(media_file=media_file)
-                manifest.create(meta_info)
-                manifest.init_index()
-            else:
-                manifest = ImageManifestManager(manifest_path=upload_dir)
-                sources = []
-                if db_data.storage == StorageChoice.LOCAL:
-                    for (root, _, files) in os.walk(data_dir):
-                        sources.extend([os.path.join(root, f) for f in files])
-                    sources.sort()
-                # using share, this means that we can not explicitly restore the entire data structure
-                else:
-                    sources = [os.path.join(data_dir, db_image.path) for db_image in db_data.images.all().order_by('frame')]
-                if any(list(filter(lambda x: x.dimension==DimensionType.DIM_3D, db_data.tasks.all()))):
-                    content = []
-                    for source in sources:
-                        name, ext = os.path.splitext(os.path.relpath(source, upload_dir))
-                        content.append({
-                            'name': name,
-                            'extension': ext
-                        })
-                else:
-                    meta_info = manifest.prepare_meta(sources=sources, data_dir=data_dir)
-                    content = meta_info.content
 
-                if db_data.storage == StorageChoice.SHARE:
-                    def _get_frame_step(str_):
-                        match = search("step\s*=\s*([1-9]\d*)", str_)
-                        return int(match.group(1)) if match else 1
-                    step = _get_frame_step(db_data.frame_filter)
-                    start = db_data.start_frame
-                    stop = db_data.stop_frame + 1
-                    images_range = range(start, stop, step)
-                    result_content = []
-                    for i in range(stop):
-                        item = content.pop(0) if i in images_range else dict()
-                        result_content.append(item)
-                    content = result_content
-                manifest.create(content)
-                manifest.init_index()
+            manifest = ImageManifestManager(manifest_path=upload_dir)
+            sources = []
+            if db_data.storage == StorageChoice.LOCAL:
+                for (root, _, files) in os.walk(data_dir):
+                    sources.extend([os.path.join(root, f) for f in files])
+                sources.sort()
+            # using share, this means that we can not explicitly restore the entire data structure
+            else:
+                sources = [os.path.join(data_dir, db_image.path) for db_image in db_data.images.all().order_by('frame')]
+            if any(list(filter(lambda x: x.dimension==DimensionType.DIM_3D, db_data.tasks.all()))):
+                content = []
+                for source in sources:
+                    name, ext = os.path.splitext(os.path.relpath(source, upload_dir))
+                    content.append({
+                        'name': name,
+                        'extension': ext
+                    })
+            else:
+                meta_info = manifest.prepare_meta(sources=sources, data_dir=data_dir)
+                content = meta_info.content
+
+            if db_data.storage == StorageChoice.SHARE:
+                def _get_frame_step(str_):
+                    match = search("step\s*=\s*([1-9]\d*)", str_)
+                    return int(match.group(1)) if match else 1
+                step = _get_frame_step(db_data.frame_filter)
+                start = db_data.start_frame
+                stop = db_data.stop_frame + 1
+                images_range = range(start, stop, step)
+                result_content = []
+                for i in range(stop):
+                    item = content.pop(0) if i in images_range else dict()
+                    result_content.append(item)
+                content = result_content
+            manifest.create(content)
+            manifest.init_index()
         except Exception as ex:
             print(str(ex))
 

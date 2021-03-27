@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: MIT
 import hashlib
 import cv2 as cv
-from av import VideoFrame
 
 def rotate_image(image, angle):
     height, width = image.shape[:2]
@@ -19,6 +18,4 @@ def rotate_image(image, angle):
     return matrix
 
 def md5_hash(frame):
-    if isinstance(frame, VideoFrame):
-        frame = frame.to_image()
     return hashlib.md5(frame.tobytes()).hexdigest() # nosec
