@@ -20,13 +20,10 @@ urlpatterns = [
 
 if settings.DJANGO_AUTH_TYPE == 'BASIC':
     urlpatterns += [
-        path('register', RegisterView.as_view(), name='rest_register'),
-        path('password/reset', PasswordResetView.as_view(),
-            name='rest_password_reset'),
-        path('password/reset/confirm', PasswordResetConfirmView.as_view(),
-            name='rest_password_reset_confirm'),
-        path('password/change', PasswordChangeView.as_view(),
-            name='rest_password_change'),
+        # path('register', RegisterView.as_view(), name='rest_register'),
+        # path('password/reset', PasswordResetView.as_view(), name='rest_password_reset'),
+        # path('password/reset/confirm', PasswordResetConfirmView.as_view(), name='rest_password_reset_confirm'),
+        path('password/change', PasswordChangeView.as_view(), name='rest_password_change'),
     ]
     if allauth_settings.EMAIL_VERIFICATION != \
        allauth_settings.EmailVerificationMethod.NONE:

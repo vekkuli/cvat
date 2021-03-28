@@ -64,7 +64,6 @@ const cvatData = {
             },
         ],
     },
-    plugins: [new CopyPlugin(['./src/js/3rdparty/avc.wasm'])],
 };
 
 module.exports = cvatData;

@@ -5,6 +5,6 @@ from sendfile import sendfile
 
 def OpenCVLibrary(request):
     dirname = os.path.join(settings.STATIC_ROOT, 'opencv', 'js')
-    pattern = os.path.join(dirname, 'opencv_*.js')
+    pattern = os.path.join(dirname, 'opencv.js')
     path = glob.glob(pattern)[0]
     return sendfile(request, path)

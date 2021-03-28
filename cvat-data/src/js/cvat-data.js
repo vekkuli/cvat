@@ -4,9 +4,7 @@
 
 const { Mutex } = require('async-mutex');
 // eslint-disable-next-line max-classes-per-file
-const { MP4Reader, Bytestream } = require('./3rdparty/mp4');
 const ZipDecoder = require('./unzip_imgs.worker');
-const H264Decoder = require('./3rdparty/Decoder.worker');
 
 const BlockType = Object.freeze({
     MP4VIDEO: 'mp4video',
@@ -204,88 +202,7 @@ class FrameProvider {
                 this._frames[i] = null;
             }
             this._cleanup();
-            if (this._blockType === BlockType.MP4VIDEO) {
-                const worker = new H264Decoder();
-                let index = start;
-
-                worker.onmessage = (e) => {
-                    if (e.data.consoleLog) {
-                        // ignore initialization message
-                        return;
-                    }
-
-                    const scaleFactor = Math.ceil(this._height / e.data.height);
-                    this._frames[index] = FrameProvider.cropImage(
-                        e.data.buf,
-                        e.data.width,
-                        e.data.height,
-                        0,
-                        0,
-                        Math.floor(width / scaleFactor),
-                        Math.floor(height / scaleFactor),
-                    );
-
-                    if (this._decodingBlocks[`${start}:${end}`].resolveCallback) {
-                        this._decodingBlocks[`${start}:${end}`].resolveCallback(index);
-                    }
-
-                    if (index in this._promisedFrames) {
-                        this._promisedFrames[index].resolve(this._frames[index]);
-                        delete this._promisedFrames[index];
-                    }
-                    if (index === end) {
-                        this._decodeThreadCount--;
-                        delete this._decodingBlocks[`${start}:${end}`];
-                        worker.terminate();
-                    }
-                    index++;
-                };
-
-                worker.onerror = (e) => {
-                    worker.terminate();
-                    this._decodeThreadCount--;
-
-                    for (let i = index; i <= end; i++) {
-                        if (i in this._promisedFrames) {
-                            this._promisedFrames[i].reject();
-                            delete this._promisedFrames[i];
-                        }
-                    }
-
-                    if (this._decodingBlocks[`${start}:${end}`].rejectCallback) {
-                        this._decodingBlocks[`${start}:${end}`].rejectCallback(Error(e));
-                    }
-                    delete this._decodingBlocks[`${start}:${end}`];
-                };
-
-                worker.postMessage({
-                    type: 'Broadway.js - Worker init',
-                    options: {
-                        rgb: true,
-                        reuseMemory: false,
-                    },
-                });
-
-                const reader = new MP4Reader(new Bytestream(block));
-                reader.read();
-                const video = reader.tracks[1];
-
-                const avc = reader.tracks[1].trak.mdia.minf.stbl.stsd.avc1.avcC;
-                const sps = avc.sps[0];
-                const pps = avc.pps[0];
-
-                /* Decode Sequence & Picture Parameter Sets */
-                worker.postMessage({ buf: sps, offset: 0, length: sps.length });
-                worker.postMessage({ buf: pps, offset: 0, length: pps.length });
-
-                /* Decode Pictures */
-                for (let sample = 0; sample < video.getSampleCount(); sample++) {
-                    video.getSampleNALUnits(sample).forEach((nal) => {
-                        worker.postMessage({ buf: nal, offset: 0, length: nal.length });
-                    });
-                }
-                this._decodeThreadCount++;
-            } else {
+            {
                 const worker = new ZipDecoder();
                 let index = start;
 

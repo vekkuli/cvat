@@ -126,12 +126,6 @@ module.exports = {
         new Dotenv({
             systemvars: true,
         }),
-        new CopyPlugin([
-            {
-                from: '../cvat-data/src/js/3rdparty/avc.wasm',
-                to: '3rdparty/',
-            },
-        ]),
     ],
     node: { fs: 'empty' },
 };
