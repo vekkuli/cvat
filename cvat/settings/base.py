@@ -386,7 +386,7 @@ LOGGING = {
         },
         'server_file': {
             'class': 'logging.handlers.RotatingFileHandler',
-            'level': 'DEBUG',
+            'level': 'INFO',
             'filename': os.path.join(BASE_DIR, 'logs', 'cvat_server.log'),
             'formatter': 'standard',
             'maxBytes': 1024*1024*50, # 50 MB

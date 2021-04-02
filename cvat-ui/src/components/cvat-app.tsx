@@ -11,8 +11,6 @@ import Spin from 'antd/lib/spin';
 import Text from 'antd/lib/typography/Text';
 import GlobalErrorBoundary from 'components/global-error-boundary/global-error-boundary';
 import Header from 'components/header/header';
-import ResetPasswordPageConfirmComponent from 'components/reset-password-confirm-page/reset-password-confirm-page';
-import ResetPasswordPageComponent from 'components/reset-password-page/reset-password-page';
 import ShorcutsDialog from 'components/shortcuts-dialog/shortcuts-dialog';
 import ProjectsPageComponent from 'components/projects-page/projects-page';
 import CreateProjectPageComponent from 'components/create-project-page/create-project-page';
@@ -342,12 +340,6 @@ class CVATApplication extends React.PureComponent<CVATAppProps & RouteComponentP
                             exact
                             path='/auth/login-with-token/:sessionId/:token'
                             component={LoginWithTokenComponent}
-                        />
-                        <Route exact path='/auth/password/reset' component={ResetPasswordPageComponent} />
-                        <Route
-                            exact
-                            path='/auth/password/reset/confirm'
-                            component={ResetPasswordPageConfirmComponent}
                         />
                         <Redirect
                             to={location.pathname.length > 1 ? `/auth/login/?next=${location.pathname}` : '/auth/login'}

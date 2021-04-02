@@ -184,12 +184,11 @@ export const loadAuthActionsAsync = (): ThunkAction => async (dispatch) => {
 
     try {
         const promises: Promise<boolean>[] = [
-            isReachable(`${cvat.config.backendAPI}/auth/password/change`, 'OPTIONS'),
-            isReachable(`${cvat.config.backendAPI}/auth/password/reset`, 'OPTIONS'),
+            isReachable(`${cvat.config.backendAPI}/auth/password/change`, 'OPTIONS')
         ];
-        const [allowChangePassword, allowResetPassword] = await Promise.all(promises);
+        const [allowChangePassword] = await Promise.all(promises);
 
-        dispatch(authActions.loadServerAuthActionsSuccess(allowChangePassword, allowResetPassword));
+        dispatch(authActions.loadServerAuthActionsSuccess(allowChangePassword, false));
     } catch (error) {
         dispatch(authActions.loadServerAuthActionsFailed(error));
     }
