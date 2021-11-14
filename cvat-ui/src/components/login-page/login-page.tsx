@@ -45,23 +45,6 @@ function LoginPageComponent(props: LoginPageComponentProps & RouteComponentProps
                                 onLogin(loginData.username, loginData.password);
                             }}
                         />
-                        <Row justify='start' align='top'>
-                            <Col>
-                                <Text strong>
-                                    New to CVAT? Create
-                                    <Link to='/auth/register'> an account</Link>
-                                </Text>
-                            </Col>
-                        </Row>
-                        {renderResetPassword && (
-                            <Row justify='start' align='top'>
-                                <Col>
-                                    <Text strong>
-                                        <Link to='/auth/password/reset'>Forgot your password?</Link>
-                                    </Text>
-                                </Col>
-                            </Row>
-                        )}
                     </Col>
                 </Row>
             </Content>
